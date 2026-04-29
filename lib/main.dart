@@ -1,14 +1,11 @@
-import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
+import 'dart:html' as html;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:pointer_interceptor/pointer_interceptor.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_web/webview_flutter_web.dart';
-
-import 'dart:html' as html;
 
 import 'modules/opds/opds_module.dart';
 import 'services/book_bridge_service.dart';
@@ -241,9 +238,10 @@ class _BookDownloadPageState extends State<BookDownloadPage> {
   }
 
   void _downloadFileWeb(Uint8List bytes, String filename) {
-    final blob = html.Blob([bytes]);
-    final url = html.Url.createObjectUrlFromBlob(blob);
-    final anchor = html.AnchorElement(href: url)
+    if (!kIsWeb) return;
+    final htmlBlob = html.Blob([bytes]);
+    final url = html.Url.createObjectUrlFromBlob(htmlBlob);
+    html.AnchorElement(href: url)
       ..download = filename
       ..click();
     html.Url.revokeObjectUrl(url);

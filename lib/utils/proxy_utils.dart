@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -7,7 +6,7 @@ import 'package:http/http.dart' as http;
 class ProxyUtils {
   static String convertToProxyUrl(String url) {
     if (url.startsWith('https://opds.wol.moe/')) {
-      return '/wenku8/' + url.substring('https://opds.wol.moe/'.length);
+      return '/wenku8/${url.substring('https://opds.wol.moe/'.length)}';
     }
     return url;
   }

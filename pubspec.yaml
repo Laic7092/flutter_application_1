@@ -37,6 +37,7 @@ dependencies:
   pointer_interceptor: ^0.10.1
   http: ^1.2.1
   xml2json: ^6.2.0
+  xml: ^6.6.1
 
 dev_dependencies:
   flutter_test:

@@ -5,8 +5,8 @@ void main() async {
   const frontendOrigin = 'http://localhost:5001'; // 前端地址，用于CORS
 
   final server = await HttpServer.bind(InternetAddress.loopbackIPv4, proxyPort);
-  print('代理服务器运行在 http://localhost:$proxyPort');
-  print('将转发 /wenku8/* 到 https://opds.wol.moe/*，并自动跟随重定向');
+  stderr.writeln('代理服务器运行在 http://localhost:$proxyPort');
+  stderr.writeln('将转发 /wenku8/* 到 https://opds.wol.moe/*，并自动跟随重定向');
 
   await for (final req in server) {
     // 处理 OPTIONS 预检请求（CORS）
@@ -40,7 +40,7 @@ void main() async {
       req.response.add(finalResp.body);
       await req.response.close();
     } catch (e) {
-      print('代理错误: $e');
+      stderr.writeln('代理错误: $e');
       req.response.statusCode = 500;
       req.response.headers.add('Access-Control-Allow-Origin', frontendOrigin);
       await req.response.close();

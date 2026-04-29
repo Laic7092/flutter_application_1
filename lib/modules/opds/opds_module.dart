@@ -158,7 +158,7 @@ class _OpdsModuleState extends State<OpdsModule> {
             child: Column(
               children: [
                 DropdownButtonFormField<String>(
-                  value: _selectedCatalog,
+                  initialValue: _selectedCatalog,
                   items: _catalogs.map((catalog) {
                     return DropdownMenuItem(
                       value: catalog['url'],
@@ -227,7 +227,7 @@ class _OpdsModuleState extends State<OpdsModule> {
 class OpdsService {
   final http.Client _client = http.Client();
 
-  Map<String, String> _defaultHeaders = {
+  final Map<String, String> _defaultHeaders = {
     'Accept': 'application/atom+xml, application/xml, text/xml',
     'User-Agent': 'FlutterOPDSClient/1.0.0',
   };
@@ -299,8 +299,8 @@ class OpdsService {
       String subtitle = '';
 
       if (feedElement != null) {
-        title = feedElement.findElements('title').firstOrNull?.text ?? 'Unknown Feed';
-        subtitle = feedElement.findElements('subtitle').firstOrNull?.text ?? '';
+        title = feedElement.findElements('title').firstOrNull?.value ?? 'Unknown Feed';
+        subtitle = feedElement.findElements('subtitle').firstOrNull?.value ?? '';
 
         for (final entryElement in feedElement.findElements('entry')) {
           entries.add(_parseEntryElement(entryElement));
@@ -334,16 +334,16 @@ class OpdsService {
     String summary = '';
     String updated = '';
 
-    id = entryElement.findElements('id').firstOrNull?.text ?? '';
-    title = entryElement.findElements('title').firstOrNull?.text ?? 'Unknown';
-    updated = entryElement.findElements('updated').firstOrNull?.text ?? '';
+    id = entryElement.findElements('id').firstOrNull?.value ?? '';
+    title = entryElement.findElements('title').firstOrNull?.value ?? 'Unknown';
+    updated = entryElement.findElements('updated').firstOrNull?.value ?? '';
 
     final authorElement = entryElement.findElements('author').firstOrNull;
     if (authorElement != null) {
-      author = authorElement.findElements('name').firstOrNull?.text ?? '';
+      author = authorElement.findElements('name').firstOrNull?.value ?? '';
     }
 
-    summary = entryElement.findElements('summary').firstOrNull?.text ?? '';
+    summary = entryElement.findElements('summary').firstOrNull?.value ?? '';
 
     for (final linkElement in entryElement.findElements('link')) {
       links.add(_parseLinkElement(linkElement));

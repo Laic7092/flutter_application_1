@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -120,7 +119,7 @@ class BookBridgeService {
 
   void _handleDownloadBook(String callbackId, String url, String filename) {
     if (_onBookDownload != null) {
-      _onBookDownload!(url, filename, (success, data) {
+      _onBookDownload(url, filename, (success, data) {
         if (success && data != null) {
           _sendResponse(callbackId, {
             'success': true,
@@ -155,7 +154,7 @@ class BookBridgeService {
     if (_controller == null) return;
 
     final response = jsonEncode(data);
-    _controller!.runJavaScript("window.bookBridgeCallbacks['$callbackId']($response)");
+    _controller.runJavaScript("window.bookBridgeCallbacks['$callbackId']($response)");
   }
 
   void _sendError(String callbackId, String errorMessage) {
