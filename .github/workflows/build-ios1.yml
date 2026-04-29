@@ -1,0 +1,31 @@
+name: Build iOS IPA (Flutter, Unsigned)
+
+on:
+  push:
+    branches: [test]
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.8'    # 或 'stable' 最新版
+          channel: 'stable'
+
+      - run: flutter pub get
+      - run: flutter build ios --release --no-codesign
+
+      - run: |
+          mkdir Payload
+          cp -R build/ios/Release-iphoneos/Runner.app Payload/
+          zip -r runner.ipa Payload
+          rm -rf Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runner.ipa
+          path: runner.ipa
