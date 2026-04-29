@@ -1,30 +1,124 @@
-name: Build iOS IPA (Flutter, Unsigned)
+name: Build Unsigned iOS IPA
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  # 允许手动触发
   workflow_dispatch:
 
 jobs:
-  build-ios:
-    runs-on: macos-latest
+  build-unsigned-ipa:
+    runs-on: macos-latest   # 必须 macOS 环境
+    
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - uses: subosito/flutter-action@v2
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.41.8'    # 或 'stable' 最新版
+          flutter-version: '3.41.8'   # 按你的 Flutter 版本修改
           channel: 'stable'
 
-      - run: flutter pub get
-      - run: flutter build ios --no-codesign
-      - run: |
-          mkdir Payload
-          cp -R build/ios/Release-iphoneos/Runner.app Payload/
-          zip -r runner.ipa Payload
-          rm -rf Payload
+      - name: Get dependencies
+        run: flutter pub get
 
-      - uses: actions/upload-artifact@v4
+      # ------------------------------------------------------
+      # 方法一：彻底修改 pbxproj + 直接用 xcodebuild（最稳定）
+      # ------------------------------------------------------
+      - name: Clean previous builds
+        run: |
+          flutter clean
+          rm -rf ios/Pods ios/Podfile.lock ios/.symlinks
+
+      - name: Install CocoaPods
+        working-directory: ios
+        run: |
+          pod install --repo-update
+          # 在 Podfile 的 post_install 中追加签名跳过配置
+          cat >> Podfile << 'EOF'
+          post_install do |installer|
+            installer.pods_project.targets.each do |target|
+              target.build_configurations.each do |config|
+                config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
+                config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'
+                config.build_settings['DEVELOPMENT_TEAM'] = ''
+                config.build_settings['PROVISIONING_PROFILE_SPECIFIER'] = ''
+              end
+            end
+          end
+          EOF
+
+      - name: Override Xcode project settings for no signing
+        working-directory: ios
+        run: |
+          # 清除所有 DevelopmentTeam 行
+          sed -i '' '/DevelopmentTeam = .*;/d' Runner.xcodeproj/project.pbxproj
+          # CODE_SIGN_STYLE 改为 Manual
+          sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' Runner.xcodeproj/project.pbxproj
+          # 清空 Provisioning Profile 指定
+          sed -i '' 's/PROVISIONING_PROFILE_SPECIFIER = "[^"]*"/PROVISIONING_PROFILE_SPECIFIER = ""/g' Runner.xcodeproj/project.pbxproj
+          # 清空 Code Sign Identity
+          sed -i '' 's/CODE_SIGN_IDENTITY = "[^"]*"/CODE_SIGN_IDENTITY = ""/g' Runner.xcodeproj/project.pbxproj
+          # 确保 CODE_SIGNING_REQUIRED 和 CODE_SIGNING_ALLOWED 为 NO
+          sed -i '' 's/CODE_SIGNING_REQUIRED = .*;/CODE_SIGNING_REQUIRED = NO;/g' Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/CODE_SIGNING_ALLOWED = .*;/CODE_SIGNING_ALLOWED = NO;/g' Runner.xcodeproj/project.pbxproj
+
+      - name: Build unsigned archive with xcodebuild
+        working-directory: ios
+        run: |
+          xcodebuild -workspace Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath ../build/ios \
+            -archivePath ../build/ios/archive/Runner.xcarchive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            DEVELOPMENT_TEAM="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            CODE_SIGN_IDENTITY="" \
+            -allowProvisioningUpdates \
+            archive
+
+      # ------------------------------------------------------
+      # 方法二（备用）：如果 xcodebuild 失败，尝试用 flutter 命令
+      # ------------------------------------------------------
+      - name: Flutter build fallback
+        if: failure()
+        run: |
+          flutter build ios --no-codesign --release -- \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            DEVELOPMENT_TEAM="" \
+            PROVISIONING_PROFILE="" \
+            CODE_SIGN_IDENTITY=""
+
+      # ------------------------------------------------------
+      # 提取 .app 并打包成 IPA
+      # ------------------------------------------------------
+      - name: Package .app into .ipa
+        run: |
+          # 如果 xcodebuild 成功，.app 在 archive 中
+          if [ -d "build/ios/archive/Runner.xcarchive" ]; then
+            cp -R build/ios/archive/Runner.xcarchive/Products/Applications/Runner.app build/ios/iphoneos/Runner.app
+          fi
+          # 如果上一步 flutter build 成功，.app 直接在 build/ios/iphoneos 下
+          # 确保存在
+          if [ ! -d "build/ios/iphoneos/Runner.app" ]; then
+            echo "No Runner.app found! Build probably failed."
+            exit 1
+          fi
+          cd build/ios/iphoneos
+          mkdir Payload
+          cp -r Runner.app Payload/
+          zip -r Runner.ipa Payload
+          echo "IPA created at build/ios/iphoneos/Runner.ipa"
+
+      - name: Upload unsigned IPA artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: runner.ipa
-          path: runner.ipa
+          name: unsigned-ios-ipa
+          path: build/ios/iphoneos/Runner.ipa
