@@ -1,121 +1,297 @@
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:pointer_interceptor/pointer_interceptor.dart';
+import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_web/webview_flutter_web.dart';
+
+import 'dart:html' as html;
+
+import 'modules/opds/opds_module.dart';
+import 'services/book_bridge_service.dart';
+import 'utils/proxy_utils.dart';
 
 void main() {
+  if (kIsWeb) {
+    WebViewPlatform.instance = WebWebViewPlatform();
+  }
   runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'Flutter WebView Bridge',
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        useMaterial3: true,
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const MainPage(),
+      builder: (context, child) {
+        if (kIsWeb && child != null) {
+          return PointerInterceptor(child: child);
+        }
+        return child ?? const SizedBox();
+      },
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
+class MainPage extends StatefulWidget {
+  const MainPage({super.key});
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<MainPage> createState() => _MainPageState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 100;
+class _MainPageState extends State<MainPage> {
+  bool _showOpds = false;
 
-  void _incrementCounter() {
+  void _toggleOpds() {
     setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
+      _showOpds = !_showOpds;
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
+    return _showOpds
+        ? OpdsModule(onBookSelect: _handleBookSelect)
+        : WebViewPage(onOpenLibrary: _toggleOpds);
+  }
+
+  void _handleBookSelect(String bookUrl) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => BookDownloadPage(bookUrl: bookUrl),
+      ),
+    );
+  }
+}
+
+class WebViewPage extends StatefulWidget {
+  final VoidCallback? onOpenLibrary;
+
+  const WebViewPage({super.key, this.onOpenLibrary});
+
+  @override
+  State<WebViewPage> createState() => _WebViewPageState();
+}
+
+class _WebViewPageState extends State<WebViewPage> {
+  late final WebViewController controller;
+  late final BookBridgeService _bookBridgeService;
+
+  @override
+  void initState() {
+    super.initState();
+    controller = WebViewController();
+    
+    if (!kIsWeb) {
+      controller.setJavaScriptMode(JavaScriptMode.unrestricted);
+    }
+    
+    _bookBridgeService = BookBridgeService(
+      controller: controller,
+      onBookDownload: _handleBookDownload,
+    );
+    _bookBridgeService.setupJavaScriptChannel(controller);
+    
+    controller.loadRequest(Uri.parse('https://laic7092.github.io/book/'));
+  }
+
+  void _handleBookDownload(String url, String filename, void Function(bool, Uint8List?) onComplete) async {
+    final bytes = await ProxyUtils.downloadWithProxy(url);
+    
+    if (bytes != null) {
+      onComplete(true, bytes);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('下载完成: $filename')),
+        );
+      }
+    } else {
+      onComplete(false, null);
+    }
+  }
+
+  void _showDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (BuildContext context) {
+        return PointerInterceptor(
+          child: AlertDialog(
+            title: const Text('提示'),
+            content: const Text('这是一个原生弹框！'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('确定'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Stack(
+        children: [
+          WebViewWidget(controller: controller),
+          Positioned(
+            bottom: 20,
+            right: 20,
+            child: Column(
+              children: [
+                PointerInterceptor(
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      shape: const CircleBorder(),
+                      padding: const EdgeInsets.all(16),
+                      backgroundColor: Colors.blue,
+                    ),
+                    onPressed: _showDialog,
+                    child: const Icon(Icons.add, color: Colors.white, size: 28),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                PointerInterceptor(
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      shape: const CircleBorder(),
+                      padding: const EdgeInsets.all(16),
+                      backgroundColor: Colors.green,
+                    ),
+                    onPressed: widget.onOpenLibrary,
+                    child: const Icon(Icons.library_books, color: Colors.white, size: 28),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class BookDownloadPage extends StatefulWidget {
+  final String bookUrl;
+
+  const BookDownloadPage({super.key, required this.bookUrl});
+
+  @override
+  State<BookDownloadPage> createState() => _BookDownloadPageState();
+}
+
+class _BookDownloadPageState extends State<BookDownloadPage> {
+  bool _isDownloading = false;
+  double _progress = 0;
+  String _errorMessage = '';
+
+  Future<void> _downloadBook() async {
+    setState(() {
+      _isDownloading = true;
+      _progress = 0;
+      _errorMessage = '';
+    });
+
+    try {
+      final bytes = await ProxyUtils.downloadWithProxy(widget.bookUrl);
+      final filename = widget.bookUrl.split('/').last;
+      
+      if (bytes != null) {
+        if (kIsWeb) {
+          _downloadFileWeb(bytes, filename);
+        } else {
+          _downloadFileNative(bytes, filename);
+        }
+        
+        setState(() {
+          _progress = 100;
+          _isDownloading = false;
+        });
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('下载成功！')),
+          );
+        }
+      } else {
+        throw Exception('下载失败');
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = e.toString();
+        _isDownloading = false;
+      });
+    }
+  }
+
+  void _downloadFileWeb(Uint8List bytes, String filename) {
+    final blob = html.Blob([bytes]);
+    final url = html.Url.createObjectUrlFromBlob(blob);
+    final anchor = html.AnchorElement(href: url)
+      ..download = filename
+      ..click();
+    html.Url.revokeObjectUrl(url);
+  }
+
+  void _downloadFileNative(Uint8List bytes, String filename) {
+    final downloadsDir = Directory.systemTemp;
+    final file = File('${downloadsDir.path}/$filename');
+    file.writeAsBytesSync(bytes);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
+        title: const Text('下载书籍'),
       ),
       body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: .center,
-          children: [
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-          ],
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text('书籍地址: ${widget.bookUrl}'),
+              const SizedBox(height: 20),
+              
+              if (_isDownloading) ...[
+                const CircularProgressIndicator(),
+                const SizedBox(height: 16),
+                LinearProgressIndicator(value: _progress / 100),
+                Text('下载进度: ${_progress.toInt()}%'),
+              ] else if (_errorMessage.isNotEmpty) ...[
+                Text('错误: $_errorMessage', style: const TextStyle(color: Colors.red)),
+              ] else ...[
+                ElevatedButton(
+                  onPressed: _downloadBook,
+                  child: const Text('下载书籍'),
+                ),
+              ],
+              
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('返回'),
+              ),
+            ],
+          ),
         ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
       ),
     );
   }

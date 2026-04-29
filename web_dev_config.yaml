@@ -1,0 +1,8 @@
+server:
+  host: "localhost"
+  port: 5000
+  proxy:
+    - target: "http://localhost:5001"
+      prefix: "/wenku8/"
+      replace: ""
+      changeOrigin: true
