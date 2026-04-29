@@ -17,7 +17,7 @@ jobs:
           channel: 'stable'
 
       - run: flutter pub get
-      - run: flutter build ios --release --no-codesign
+      - run: flutter build ios --release --no-codesign -- --development-team=""
 
       - run: |
           mkdir Payload
